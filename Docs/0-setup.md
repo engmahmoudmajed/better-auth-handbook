@@ -14,4 +14,4 @@
 - Configre Auth to ORM or DB 
   - to execute Auth to add user to DB
 
-- start create your logic and tables 
+- start create your app
