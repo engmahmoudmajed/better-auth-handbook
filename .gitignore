@@ -42,3 +42,7 @@ next-env.d.ts
 
 # drizzle output
 /src/db/drizzle
+
+# postal
+postal/config/postal.yml
+postal/config/signing.key

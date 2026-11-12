@@ -6,7 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Mail } from "lucide-react";
+import { FaDiscord, FaGithub } from "react-icons/fa6";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,10 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
-import { error } from "console";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-
 
 gsap.registerPlugin(useGSAP);
 
@@ -67,7 +66,7 @@ function AnimatedPanel({ children }: { children: React.ReactNode }) {
         gsap.from("[data-animate]", {
           y: 16,
           opacity: 0,
-          duration: 0.5,
+          duration: 0.2,
           ease: "power3.out",
           stagger: 0.07,
           clearProps: "transform,opacity",
@@ -206,6 +205,140 @@ function SubmitButton({
   );
 }
 
+/* ---------- Social login (GitHub + Discord) ---------- */
+
+type Provider = "github" | "discord";
+
+const PROVIDERS: { id: Provider; label: string; Icon: React.ElementType }[] = [
+  { id: "github", label: "GitHub", Icon: FaGithub },
+  { id: "discord", label: "Discord", Icon: FaDiscord },
+];
+
+function SocialButtons() {
+  const [loading, setLoading] = React.useState<Provider | null>(null);
+
+  const handleSocial = async (provider: Provider) => {
+    setLoading(provider);
+    try {
+      await authClient.signIn.social(
+        { provider, callbackURL: "/" },
+        {
+          onError: (ctx) => {
+            toast.error(
+              ctx.error.message || `Failed to continue with ${provider}`
+            );
+            setLoading(null);
+          },
+        }
+      );
+      // On success the browser redirects to the provider, so the
+      // loading state stays on until the page unloads.
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+      setLoading(null);
+    }
+  };
+
+  return (
+    <div data-animate className="grid w-full gap-4">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        or continue with
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {PROVIDERS.map(({ id, label, Icon }) => (
+          <Button
+            key={id}
+            type="button"
+            variant="outline"
+            className="h-10"
+            disabled={loading !== null}
+            onClick={() => handleSocial(id)}
+          >
+            {loading === id ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <Icon className="mr-2 size-4" />
+            )}
+            {label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Email verification notice ---------- */
+
+/** Shown after sign up: tells the user to check their inbox, with a resend option. */
+function VerifyEmailNotice({
+  email,
+  onBack,
+}: {
+  email: string;
+  onBack: () => void;
+}) {
+  const [resending, setResending] = React.useState(false);
+
+  const resend = async () => {
+    setResending(true);
+    try {
+      await authClient.sendVerificationEmail(
+        { email, callbackURL: "/" },
+        {
+          onSuccess: () => {
+            toast.success("Verification email sent again");
+          },
+          onError: (ctx) => {
+            toast.error(ctx.error.message || "Failed to resend the email");
+          },
+        }
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setResending(false);
+    }
+  };
+
+  return (
+    <div data-animate className="grid w-full gap-5 text-center">
+      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+        <Mail className="size-6" />
+      </div>
+      <div className="grid gap-1">
+        <p className="font-medium">Check your email</p>
+        <p className="text-sm text-muted-foreground">
+          We sent a verification link to{" "}
+          <span className="font-medium text-foreground">{email}</span>. Click
+          it to activate your account, then sign in.
+        </p>
+      </div>
+      <div className="grid gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-10 w-full"
+          onClick={resend}
+          disabled={resending}
+        >
+          {resending && <Loader2 className="mr-2 size-4 animate-spin" />}
+          Resend email
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-10 w-full"
+          onClick={onBack}
+        >
+          Use a different email
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Forms ---------- */
 
 function SignInForm() {
@@ -224,10 +357,16 @@ function SignInForm() {
   const onSubmit = async ({ email, password }: SignInValues) => {
     try {
       await authClient.signIn.email(
-        { email, password },
+        { email, password, callbackURL: "/" },
         {
           onError: (ctx) => {
-            const message = ctx.error.message || "Failed to sign in";
+            // 403 means the account exists but the email is not verified yet.
+            // Better Auth re-sends the verification email automatically
+            // (emailVerification.sendOnSignIn = true on the server).
+            const message =
+              ctx.error.status === 403
+                ? "Please verify your email first. We sent you a new link."
+                : ctx.error.message || "Failed to sign in";
             setError("root", { message });
             toast.error(message);
             shake(formRef.current);
@@ -279,8 +418,7 @@ function SignInForm() {
   );
 }
 
-function SignUpForm() {
-  const router = useRouter();
+function SignUpForm({ onSent }: { onSent: (email: string | null) => void }) {
   const formRef = React.useRef<HTMLFormElement>(null);
   const {
     register,
@@ -299,7 +437,7 @@ function SignUpForm() {
           name,
           email,
           password,
-          // callbackURL: "/", // only needed if email verification is enabled
+          callbackURL: "/", // where the user lands after clicking the email link
         },
         {
           onError: (ctx) => {
@@ -309,9 +447,10 @@ function SignUpForm() {
             shake(formRef.current);
           },
           onSuccess: () => {
-            toast.success("Account created");
-            router.push("/");
-            router.refresh();
+            // No session yet: the user must verify their email first,
+            // so show the "check your email" notice instead of redirecting.
+            toast.success("Account created. Check your email.");
+            onSent(email);
           },
         }
       );
@@ -324,7 +463,6 @@ function SignUpForm() {
     }
   };
 
-  // ...return JSX stays the same
   return (
     <form
       ref={formRef}
@@ -371,6 +509,22 @@ function SignUpForm() {
   );
 }
 
+/** Switches between the sign up form and the "check your email" notice. */
+function SignUpPanel() {
+  const [sentTo, setSentTo] = React.useState<string | null>(null);
+
+  if (sentTo) {
+    return <VerifyEmailNotice email={sentTo} onBack={() => setSentTo(null)} />;
+  }
+
+  return (
+    <>
+      <SignUpForm onSent={setSentTo} />
+      <SocialButtons />
+    </>
+  );
+}
+
 /* ---------- Tabs ---------- */
 
 export function AuthTabs() {
@@ -399,8 +553,9 @@ export function AuthTabs() {
                 Enter your email and password to sign in.
               </CardDescription>
             </CardHeader>
-            <CardContent className="px-0 sm:px-6">
+            <CardContent className="grid gap-5 px-0 sm:px-6">
               <SignInForm />
+              <SocialButtons />
             </CardContent>
           </Card>
         </AnimatedPanel>
@@ -420,8 +575,8 @@ export function AuthTabs() {
                 Fill in your details to get started.
               </CardDescription>
             </CardHeader>
-            <CardContent className="px-0 sm:px-6">
-              <SignUpForm />
+            <CardContent className="grid gap-5 px-0 sm:px-6">
+              <SignUpPanel />
             </CardContent>
           </Card>
         </AnimatedPanel>

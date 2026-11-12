@@ -5,6 +5,22 @@ A working setup guide for email/password auth with Better Auth, Drizzle ORM, and
 > Versions in this guide come from a real project (Next.js 16, React 19, `better-auth` ^1.7, `drizzle-orm` ^0.45, `drizzle-kit` ^0.31). If a command behaves differently, check the official docs for your version.
 
 ---
+## in simple steps 
+1. create folders lib and db
+2. in db folder we have 
+  1. schema folder which we make to have generated drizzle table by better auth and schema we write in sperated files
+  2. schema.ts which file sql table created from it drizzle take it and generate sql and file where we export all schema to index.ts to work with all schema we write
+  3. index.ts configration for db and schema 
+  3. 
+  4. generate table with drizzle-kit generate
+  5. apply tables to db with drizzle-kit migrate
+3. lib folder for client side configration which have
+  1. auth-client.ts  -> to use in client routes
+  2. auth.ts -> to configre it with api route in nextjs 
+   
+
+
+---
 
 ## 1. Project structure
 
@@ -405,3 +421,77 @@ Common mistakes seen in this stack's `package.json`:
 - Change the default `password` before deploying anywhere.
 - Don't expose the Postgres port publicly in production.
 - Set `BETTER_AUTH_URL` to the real production URL when deploying.
+
+
+## add another tables 
+No, other tables won't affect the auth tables. Just keep them in separate files.
+
+### 1. Don't put your own tables in `auth-schema.ts`
+
+`npm run auth:generate` **overwrites** that file every time you run it. Anything you add by hand there will be lost. Put your tables in their own files:
+
+```
+src/db/schema/
+  auth-schema.ts   // generated, don't edit
+  posts.ts         // yours
+  index.ts         // re-exports everything
+```
+
+```ts
+// src/db/schema/index.ts
+export * from "./auth-schema";
+export * from "./posts";
+```
+
+### 2. Reference the auth tables from yours
+
+You can add a foreign key to `user` by importing it:
+
+```ts
+// src/db/schema/posts.ts
+import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { user } from "./auth-schema";
+
+export const posts = pgTable("posts", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+```
+
+Better Auth's `user.id` is `text`, so your foreign key column must be `text` too.
+
+### 3. Use the combined schema in `db` and `auth`
+
+```ts
+// src/db/index.ts
+import * as schema from "./schema";
+export const db = drizzle(process.env.DATABASE_URL!, { schema });
+```
+
+```ts
+// src/lib/auth.ts
+import * as schema from "../db/schema";
+
+database: drizzleAdapter(db, { provider: "pg", schema }),
+```
+
+The adapter only looks for `user`, `session`, `account` and `verification`, so your other tables don't interfere.
+
+### 4. Keep `drizzle.config.ts` on the folder
+
+```ts
+schema: "./src/db/schema",
+```
+
+Every file in that folder is picked up, so `db:push` and `db:generate` handle auth tables and yours together.
+
+### Two cautions
+
+- `db:push` makes the database match your schema files. If a table exists in Postgres but not in any schema file, it may offer to **drop** it. Keep all your tables in the schema folder, and read the prompt before confirming.
+- Run `auth:generate` again only when you change Better Auth plugins or user fields. Your own tables are not touched by it.
+
+
