@@ -15,10 +15,35 @@ function escapeHtml(value: string) {
 }
 
 export const auth = betterAuth({
-  emailAndPassword: {
-    enabled: true,
-    requireEmailVerification: true, // password users must verify before signing in
+emailAndPassword: {
+  enabled: true,
+  requireEmailVerification: true,
+  resetPasswordTokenExpiresIn: 3600, // 1 hour
+  sendResetPassword: async ({ user, url }) => {
+    // Not awaited on purpose (avoids timing differences that reveal whether the email exists).
+    void sendEmail({
+      to: user.email,
+      subject: "Reset your password",
+      html: `
+        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+          <h2>Reset your password</h2>
+          <p>Hi ${escapeHtml(user.name || "there")},</p>
+          <p>Click the button below to choose a new password. This link expires in 1 hour.</p>
+          <p>
+            <a href="${url}"
+               style="display:inline-block;padding:10px 20px;background:#000;color:#fff;
+                      text-decoration:none;border-radius:6px;">
+              Reset password
+            </a>
+          </p>
+          <p style="color:#666;font-size:13px;">
+            If you didn't request this, you can ignore this email.
+          </p>
+        </div>
+      `,
+    });
   },
+},
 
   emailVerification: {
     sendOnSignUp: true, // send the email right after sign up

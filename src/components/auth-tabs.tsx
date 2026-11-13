@@ -50,8 +50,13 @@ const signUpSchema = z
     path: ["confirmPassword"],
   });
 
+const forgotSchema = z.object({
+  email: z.string().min(1, "Email is required").email("Enter a valid email"),
+});
+
 type SignInValues = z.infer<typeof signInSchema>;
 type SignUpValues = z.infer<typeof signUpSchema>;
+type ForgotValues = z.infer<typeof forgotSchema>;
 
 /* ---------- Animation helpers ---------- */
 
@@ -341,7 +346,7 @@ function VerifyEmailNotice({
 
 /* ---------- Forms ---------- */
 
-function SignInForm() {
+function SignInForm({ onForgot }: { onForgot: () => void }) {
   const router = useRouter();
   const formRef = React.useRef<HTMLFormElement>(null);
   const {
@@ -410,6 +415,15 @@ function SignInForm() {
         error={errors.password?.message}
         {...register("password")}
       />
+      <div data-animate className="-mt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={onForgot}
+          className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+        >
+          Forgot password?
+        </button>
+      </div>
       {errors.root?.message && (
         <FieldError id="signin-root-error" message={errors.root.message} />
       )}
@@ -509,6 +523,121 @@ function SignUpForm({ onSent }: { onSent: (email: string | null) => void }) {
   );
 }
 
+/* ---------- Forgot password ---------- */
+
+/** Email form that requests a reset link, then shows a "check your email" notice. */
+function ForgotPasswordPanel({ onBack }: { onBack: () => void }) {
+  const formRef = React.useRef<HTMLFormElement>(null);
+  const [sentTo, setSentTo] = React.useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<ForgotValues>({
+    resolver: zodResolver(forgotSchema),
+    defaultValues: { email: "" },
+  });
+
+  const onSubmit = async ({ email }: ForgotValues) => {
+    try {
+      await authClient.requestPasswordReset(
+        { email, redirectTo: "/reset-password" },
+        {
+          onError: (ctx) => {
+            const message =
+              ctx.error.message || "Failed to send the reset link";
+            setError("root", { message });
+            toast.error(message);
+            shake(formRef.current);
+          },
+          onSuccess: () => setSentTo(email),
+        }
+      );
+    } catch (err) {
+      setError("root", {
+        message: err instanceof Error ? err.message : "Something went wrong",
+      });
+      shake(formRef.current);
+    }
+  };
+
+  if (sentTo) {
+    return (
+      <div data-animate className="grid w-full gap-5 text-center">
+        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+          <Mail className="size-6" />
+        </div>
+        <div className="grid gap-1">
+          <p className="font-medium">Check your email</p>
+          <p className="text-sm text-muted-foreground">
+            If an account exists for{" "}
+            <span className="font-medium text-foreground">{sentTo}</span>, we
+            sent a link to reset your password.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-10 w-full"
+          onClick={onBack}
+        >
+          Back to sign in
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      ref={formRef}
+      onSubmit={handleSubmit(onSubmit, () => shake(formRef.current))}
+      noValidate
+      className="grid w-full gap-5"
+    >
+      <Field
+        id="forgot-email"
+        label="Email"
+        type="email"
+        placeholder="you@example.com"
+        autoComplete="email"
+        error={errors.email?.message}
+        {...register("email")}
+      />
+      {errors.root?.message && (
+        <FieldError id="forgot-root-error" message={errors.root.message} />
+      )}
+      <SubmitButton loading={isSubmitting}>Send reset link</SubmitButton>
+      <Button
+        type="button"
+        variant="ghost"
+        className="h-10 w-full"
+        onClick={onBack}
+      >
+        Back to sign in
+      </Button>
+    </form>
+  );
+}
+
+/* ---------- Panels ---------- */
+
+/** Switches between the sign in form and the forgot password flow. */
+function SignInPanel() {
+  const [forgot, setForgot] = React.useState(false);
+
+  if (forgot) {
+    return <ForgotPasswordPanel onBack={() => setForgot(false)} />;
+  }
+
+  return (
+    <>
+      <SignInForm onForgot={() => setForgot(true)} />
+      <SocialButtons />
+    </>
+  );
+}
+
 /** Switches between the sign up form and the "check your email" notice. */
 function SignUpPanel() {
   const [sentTo, setSentTo] = React.useState<string | null>(null);
@@ -554,8 +683,7 @@ export function AuthTabs() {
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-5 px-0 sm:px-6">
-              <SignInForm />
-              <SocialButtons />
+              <SignInPanel />
             </CardContent>
           </Card>
         </AnimatedPanel>
