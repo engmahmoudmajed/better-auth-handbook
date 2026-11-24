@@ -29,6 +29,7 @@ async function AuthActions() {
         </span>
       </p>
       <SignOutButton />
+      
     </div>
   );
 }

@@ -1,11 +1,12 @@
+
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { db } from "@/db"; // use "../db" if auth:generate can't resolve the alias
+import { db } from "@/db";
 import * as schema from "../db/schema/auth-schema";
 import { sendEmail } from "./email";
 
-// Prevents HTML injection through the user's name inside the email body
+// Prevent HTML injection through the user's name
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -15,42 +16,44 @@ function escapeHtml(value: string) {
 }
 
 export const auth = betterAuth({
-emailAndPassword: {
-  enabled: true,
-  requireEmailVerification: true,
-  resetPasswordTokenExpiresIn: 3600, // 1 hour
-  sendResetPassword: async ({ user, url }) => {
-    // Not awaited on purpose (avoids timing differences that reveal whether the email exists).
-    void sendEmail({
-      to: user.email,
-      subject: "Reset your password",
-      html: `
-        <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
-          <h2>Reset your password</h2>
-          <p>Hi ${escapeHtml(user.name || "there")},</p>
-          <p>Click the button below to choose a new password. This link expires in 1 hour.</p>
-          <p>
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema,
+  }),
+
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: true,
+    resetPasswordTokenExpiresIn: 3600,
+
+    sendResetPassword: async ({ user, url }) => {
+      void sendEmail({
+        to: user.email,
+        subject: "Reset your password",
+        html: `
+          <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+            <h2>Reset your password</h2>
+            <p>Hi ${escapeHtml(user.name || "there")},</p>
+            <p>Click the button below to choose a new password. This link expires in 1 hour.</p>
             <a href="${url}"
-               style="display:inline-block;padding:10px 20px;background:#000;color:#fff;
-                      text-decoration:none;border-radius:6px;">
+              style="display:inline-block;padding:10px 20px;background:#000;color:#fff;text-decoration:none;border-radius:6px;">
               Reset password
             </a>
-          </p>
-          <p style="color:#666;font-size:13px;">
-            If you didn't request this, you can ignore this email.
-          </p>
-        </div>
-      `,
-    });
+            <p style="color:#666;font-size:13px;">
+              If you didn't request this, you can ignore this email.
+            </p>
+          </div>
+        `,
+      });
+    },
   },
-},
 
   emailVerification: {
-    sendOnSignUp: true, // send the email right after sign up
-    sendOnSignIn: true, // re-send when an unverified user tries to sign in
+    sendOnSignUp: true,
+    sendOnSignIn: true,
     autoSignInAfterVerification: true,
+
     sendVerificationEmail: async ({ user, url }) => {
-      // Not awaited on purpose (avoids timing differences between requests).
       void sendEmail({
         to: user.email,
         subject: "Verify your email address",
@@ -59,19 +62,52 @@ emailAndPassword: {
             <h2>Verify your email</h2>
             <p>Hi ${escapeHtml(user.name || "there")},</p>
             <p>Click the button below to verify your email address.</p>
-            <p>
-              <a href="${url}"
-                 style="display:inline-block;padding:10px 20px;background:#000;color:#fff;
-                        text-decoration:none;border-radius:6px;">
-                Verify email
-              </a>
-            </p>
+            <a href="${url}"
+              style="display:inline-block;padding:10px 20px;background:#000;color:#fff;text-decoration:none;border-radius:6px;">
+              Verify email
+            </a>
             <p style="color:#666;font-size:13px;">
               If you didn't create an account, you can ignore this email.
             </p>
           </div>
         `,
       });
+    },
+  },
+
+  // Welcome email hook
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          await sendEmail({
+            to: user.email,
+            subject: "Welcome to My App!",
+            html: `
+              <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+                <h1>Welcome, ${escapeHtml(user.name || "there")}! 🎉</h1>
+
+                <p>We're excited to have you with us.</p>
+
+                <p>
+                  Your account has been created successfully.
+                  Thank you for joining our community!
+                </p>
+
+                <p>
+                  You can now explore everything our application has to offer.
+                </p>
+
+                <p style="color:#666;font-size:13px;">
+                  Thanks for joining us!
+                </p>
+              </div>
+            `,
+          });
+
+          console.log("Welcome email processed for:", user.email);
+        },
+      },
     },
   },
 
@@ -100,10 +136,5 @@ emailAndPassword: {
     },
   },
 
-  plugins: [nextCookies()], // keep this as the last plugin
-
-  database: drizzleAdapter(db, {
-    provider: "pg",
-    schema,
-  }),
+  plugins: [nextCookies()],
 });
