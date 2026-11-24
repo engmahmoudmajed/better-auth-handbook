@@ -9,15 +9,15 @@
 # - postal-*: Postal mail server (optional, needs a real domain to send mail)
 #             Web UI: http://localhost:5000   SMTP: localhost:2525
 
-x-postal: &postal
-  image: ghcr.io/postalserver/postal:latest
-  restart: unless-stopped
-  profiles: ["postal"]
-  volumes:
-    - ./postal/config:/config   # postal.yml + signing.key
-  depends_on:
-    postal-db:
-      condition: service_healthy
+# x-postal: &postal
+#   image: ghcr.io/postalserver/postal:latest
+#   restart: unless-stopped
+#   profiles: ["postal"]
+#   volumes:
+#     - ./postal/config:/config   # postal.yml + signing.key
+#   depends_on:
+#     postal-db:
+#       condition: service_healthy
 
 services:
   # ---------- Your app database ----------
@@ -47,36 +47,36 @@ services:
       - "1025:1025"   # SMTP
 
   # ---------- Postal (optional) ----------
-  postal-db:
-    image: mariadb:11
-    restart: unless-stopped
-    profiles: ["postal"]
-    environment:
-      MARIADB_ROOT_PASSWORD: postal
-    volumes:
-      - postal-db-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+  # postal-db:
+  #   image: mariadb:11
+  #   restart: unless-stopped
+  #   profiles: ["postal"]
+  #   environment:
+  #     MARIADB_ROOT_PASSWORD: postal
+  #   volumes:
+  #     - postal-db-data:/var/lib/mysql
+  #   healthcheck:
+  #     test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 20
 
-  postal-web:
-    <<: *postal
-    command: postal web-server
-    ports:
-      - "5000:5000"
+  # postal-web:
+  #   <<: *postal
+  #   command: postal web-server
+  #   ports:
+  #     - "5000:5000"
 
-  postal-smtp:
-    <<: *postal
-    command: postal smtp-server
-    ports:
-      - "2525:25"
+  # postal-smtp:
+  #   <<: *postal
+  #   command: postal smtp-server
+  #   ports:
+  #     - "2525:25"
 
-  postal-worker:
-    <<: *postal
-    command: postal worker
+  # postal-worker:
+  #   <<: *postal
+  #   command: postal worker
 
 volumes:
   pgdata:
-  postal-db-data:
+  # postal-db-data:
